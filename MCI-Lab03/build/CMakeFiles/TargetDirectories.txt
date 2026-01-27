@@ -1,0 +1,6 @@
+/home/azyan/MCI (Copy)/MCI-Lab03/build/CMakeFiles/MCI_Lab03.dir
+/home/azyan/MCI (Copy)/MCI-Lab03/build/CMakeFiles/edit_cache.dir
+/home/azyan/MCI (Copy)/MCI-Lab03/build/CMakeFiles/rebuild_cache.dir
+/home/azyan/MCI (Copy)/MCI-Lab03/build/cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir
+/home/azyan/MCI (Copy)/MCI-Lab03/build/cmake/stm32cubemx/CMakeFiles/edit_cache.dir
+/home/azyan/MCI (Copy)/MCI-Lab03/build/cmake/stm32cubemx/CMakeFiles/rebuild_cache.dir
