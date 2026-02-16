@@ -35,9 +35,9 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
 // // Task 4: LED counters
-// uint32_t count_red = 0;
-// uint32_t count_blue = 0;
-// uint32_t count_green = 0;
+uint32_t count_red = 0;
+uint32_t count_blue = 0;
+uint32_t count_green = 0;
 
 uint32_t ic_val1 = 0;      // First capture timestamp
 uint32_t ic_val2 = 0;      // Second capture timestamp
@@ -132,7 +132,7 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
-  // HAL_TIM_Base_Start_IT(&htim2); // The "_IT" stands for Interrupt
+  HAL_TIM_Base_Start_IT(&htim2); // The "_IT" stands for Interrupt
 
   /* USER CODE END 2 */
 
@@ -145,13 +145,13 @@ while (1)
     //   HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_9);  // Toggle LED
     // delay_ms(1000);  
     // Print frequency to Terminal (baud 38400)
-    myPrintf("Frequency: %.2f Hz\r\n", frequency);
+    // myPrintf("Frequency: %.2f Hz\r\n", frequency);
 
-    // Toggle Red LED just to show the board is alive
-    HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_9);
+    // // Toggle Red LED just to show the board is alive
+    // HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_9);
     
-    // Wait 500ms
-    HAL_Delay(500);
+    // // Wait 500ms
+    // HAL_Delay(500);
     
 }    /* USER CODE END WHILE */
 
@@ -310,7 +310,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 47;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 9999;
+  htim2.Init.Period = 999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -355,7 +355,7 @@ static void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 47;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65535;
+  htim3.Init.Period = 999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -524,63 +524,63 @@ static void MX_GPIO_Init(void)
 //     }
 // }
 
-// void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-// {
-//     if (htim->Instance == TIM2) {
-//         // 1. Increment all counters
-//         count_red++;
-//         count_blue++;
-//         count_green++;
-
-//         // 2. Check Red LED (500ms) - usually PE9
-//         if (count_red >= 500) {
-//             HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_9);
-//             count_red = 0;
-//         }
-
-//         // 3. Check Blue LED (200ms) - usually PE8
-//         if (count_blue >= 200) {
-//             HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_8);
-//             count_blue = 0;
-//         }
-
-//         // 4. Check Green LED (100ms) - 
-//         if (count_green >= 100) {
-//             HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_11); 
-//             count_green = 0;
-//         }
-//     }
-// }
-
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-    if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) 
-    {
-        if (is_first_capture) 
-        {
-            ic_val1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            is_first_capture = 0;
+    if (htim->Instance == TIM2) {
+        // 1. Increment all counters
+        count_red++;
+        count_blue++;
+        count_green++;
+
+        // 2. Check Red LED (500ms) - usually PE9
+        if (count_red >= 5000) {
+            HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_9);
+            count_red = 0;
         }
-        else 
-        {
-            ic_val2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-            
-            // Calculate difference, handling 16-bit counter rollover
-            if (ic_val2 > ic_val1) {
-                difference = ic_val2 - ic_val1;
-            } else {
-                difference = (0xFFFF - ic_val1) + ic_val2;
-            }
-            
-            // Calc Frequency: Clock is 1MHz (48MHz / 48), so F = 1,000,000 / Period
-            if (difference != 0) {
-                frequency = 1000000.0f / (float)difference;
-            }
-            
-            is_first_capture = 1;
+
+        // 3. Check Blue LED (200ms) - usually PE8
+        if (count_blue >= 200) {
+            // HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_8);
+            count_blue = 0;
+        }
+
+        // 4. Check Green LED (100ms) - 
+        if (count_green >= 100) {
+            // HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_11); 
+            count_green = 0;
         }
     }
 }
+
+// void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+// {
+//     if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) 
+//     {
+//         if (is_first_capture) 
+//         {
+//             ic_val1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+//             is_first_capture = 0;
+//         }
+//         else 
+//         {
+//             ic_val2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+            
+//             // Calculate difference, handling 16-bit counter rollover
+//             if (ic_val2 > ic_val1) {
+//                 difference = ic_val2 - ic_val1;
+//             } else {
+//                 difference = (0xFFFF - ic_val1) + ic_val2;
+//             }
+            
+//             // Calc Frequency: Clock is 1MHz (48MHz / 48), so F = 1,000,000 / Period
+//             if (difference != 0) {
+//                 frequency = 1000000.0f / (float)difference;
+//             }
+            
+//             is_first_capture = 1;
+//         }
+//     }
+// }
 
 
 
