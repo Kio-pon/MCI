@@ -201,55 +201,55 @@ Motor_B_SetSpeed(0);
         
         // Test 1: Both motors forward at 40% speed
         BOTH_MOTORS_FORWARD();
-        Both_Motors_SetSpeed(40);
-        HAL_Delay(2000);
-        
-        // Test 2: Both motors forward at 70% speed
-        Both_Motors_SetSpeed(70);
-        HAL_Delay(2000);
-        
-        // Test 3: Both motors forward at 100% speed
-        Both_Motors_SetSpeed(100);
-        HAL_Delay(2000);
-        
-        // Stop
-        BOTH_MOTORS_STOP();
         Both_Motors_SetSpeed(0);
-        HAL_Delay(1000);
+        // HAL_Delay(2000);
         
-        // Test 4: Both motors reverse at 60% speed
-        BOTH_MOTORS_REVERSE();
-        Both_Motors_SetSpeed(60);
-        HAL_Delay(3000);
+        // // Test 2: Both motors forward at 70% speed
+        // Both_Motors_SetSpeed(70);
+        // HAL_Delay(2000);
         
-        // Stop
-        BOTH_MOTORS_STOP();
-        Both_Motors_SetSpeed(0);
-        HAL_Delay(1000);
+        // // Test 3: Both motors forward at 100% speed
+        // Both_Motors_SetSpeed(100);
+        // HAL_Delay(2000);
         
-        // Test 5: Turn right (Motor A reverse, Motor B forward)
-        MOTOR_A_REVERSE();
-        MOTOR_B_FORWARD();
-        Motor_A_SetSpeed(50);
-        Motor_B_SetSpeed(50);
-        HAL_Delay(1500);
+        // // Stop
+        // BOTH_MOTORS_STOP();
+        // Both_Motors_SetSpeed(0);
+        // HAL_Delay(1000);
         
-        // Stop
-        BOTH_MOTORS_STOP();
-        Both_Motors_SetSpeed(0);
-        HAL_Delay(1000);
+        // // Test 4: Both motors reverse at 60% speed
+        // BOTH_MOTORS_REVERSE();
+        // Both_Motors_SetSpeed(60);
+        // HAL_Delay(3000);
         
-        // Test 6: Turn left (Motor A forward, Motor B reverse)
-        MOTOR_A_FORWARD();
-        MOTOR_B_REVERSE();
-        Motor_A_SetSpeed(50);
-        Motor_B_SetSpeed(50);
-        HAL_Delay(1500);
+        // // Stop
+        // BOTH_MOTORS_STOP();
+        // Both_Motors_SetSpeed(0);
+        // HAL_Delay(1000);
         
-        // Stop
-        BOTH_MOTORS_STOP();
-        Both_Motors_SetSpeed(0);
-        HAL_Delay(2000);
+        // // Test 5: Turn right (Motor A reverse, Motor B forward)
+        // MOTOR_A_REVERSE();
+        // MOTOR_B_FORWARD();
+        // Motor_A_SetSpeed(50);
+        // Motor_B_SetSpeed(50);
+        // HAL_Delay(1500);
+        
+        // // Stop
+        // BOTH_MOTORS_STOP();
+        // Both_Motors_SetSpeed(0);
+        // HAL_Delay(1000);
+        
+        // // Test 6: Turn left (Motor A forward, Motor B reverse)
+        // MOTOR_A_FORWARD();
+        // MOTOR_B_REVERSE();
+        // Motor_A_SetSpeed(50);
+        // Motor_B_SetSpeed(50);
+        // HAL_Delay(1500);
+        
+        // // Stop
+        // BOTH_MOTORS_STOP();
+        // Both_Motors_SetSpeed(0);
+        // HAL_Delay(2000);
         
         /* USER CODE END 3 */
     
@@ -507,6 +507,16 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin|LD4_Pin|LD3_Pin|LD5_Pin
                           |LD7_Pin|LD9_Pin|LD10_Pin|LD8_Pin
                           |LD6_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level for Motor Control Pins */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PC0 PC1 PC2 PC3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : DRDY_Pin MEMS_INT3_Pin MEMS_INT4_Pin MEMS_INT1_Pin
                            MEMS_INT2_Pin */
