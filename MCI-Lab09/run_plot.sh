@@ -14,4 +14,4 @@ sudo chmod 666 "$PORT"
 # Activate venv and run
 echo "Starting plot_adc.py..."
 source ./lab7_env/bin/activate
-python Lab8Task3_plot.py
+python Lab9_sensorplot.py

@@ -121,10 +121,10 @@ int main(void)
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
   
   // PART 1: Polling Mode (comment out for Part 2)
-  // HAL_ADC_Start(&hadc1);
+  HAL_ADC_Start(&hadc1);
   
   // PART 2: Interrupt Mode (uncomment for Part 2)
-  HAL_ADC_Start_IT(&hadc1);
+  // HAL_ADC_Start_IT(&hadc1);
 
   /* USER CODE END 2 */
 
@@ -154,17 +154,17 @@ int main(void)
     // HAL_Delay(10);
 
      // Task 2 - Polling Mode:
-    // HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-    // uint32_t adc_raw = HAL_ADC_GetValue(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+    uint32_t adc_raw = HAL_ADC_GetValue(&hadc1);
 
-    // float32_t voltage = (float32_t)adc_raw * (3.3f / 4095.0f);
-    // apply_moving_average(voltage);
+    float32_t voltage = (float32_t)adc_raw * (3.3f / 4095.0f);
+    apply_moving_average(voltage);
 
-    // uint32_t filtered_int = (uint32_t)(filtered_output * (4095.0f / 3.3f));
+    uint32_t filtered_int = (uint32_t)(filtered_output * (4095.0f / 3.3f));
 
-    // char msg[64];
-    // int len = snprintf(msg, sizeof(msg), "%lu,%lu\r\n", (uint32_t)adc_raw, (uint32_t)filtered_int);
-    // HAL_UART_Transmit(&huart2, (uint8_t*)msg, len, HAL_MAX_DELAY);
+    char msg[64];
+    int len = snprintf(msg, sizeof(msg), "%lu,%lu\r\n", (uint32_t)adc_raw, (uint32_t)filtered_int);
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, len, HAL_MAX_DELAY);
 
     // HAL_Delay(10);
     

@@ -32,6 +32,9 @@ typedef struct {
     int16_t raw_ax, raw_ay, raw_az;
     float ax, ay, az;
     float acc_offset_x, acc_offset_y, acc_offset_z;
+    float gx, gy, gz;
+    float gyro_offset_x, gyro_offset_y, gyro_offset_z;
+    float angle;
 } LSM_Data;
 /* USER CODE END PTD */
 
@@ -78,13 +81,46 @@ void Init_LSM(void);
 void Offset_LSM(void);
 void Read_LSM(void);
 void Print_LSM(void);
+void gyro_init(void);
+void Read_Gyro(void);
+void gyro_reader(uint8_t reg, uint8_t *rx);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void Read_Gyro(void) {
+    uint8_t xH, xL, yH, yL, zH, zL;
+    gyro_reader(0x29, &xH);
+    gyro_reader(0x28, &xL);
+    gyro_reader(0x2B, &yH);
+    gyro_reader(0x2A, &yL);
+    gyro_reader(0x2D, &zH);
+    gyro_reader(0x2C, &zL);
 
+    int16_t gx = (int16_t)(xH << 8 | xL);
+    int16_t gy = (int16_t)(yH << 8 | yL);
+    int16_t gz = (int16_t)(zH << 8 | zL);
+
+    lsm.gx = (gx * 0.00875f) - lsm.gyro_offset_x;
+    lsm.gy = (gy * 0.00875f) - lsm.gyro_offset_y;
+    lsm.gz = (gz * 0.00875f) - lsm.gyro_offset_z;
+}
+void gyro_reader(uint8_t reg, uint8_t *rx) {
+    uint8_t tx = 0x80 | reg;
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, &tx, 1, HAL_MAX_DELAY);
+    HAL_SPI_Receive(&hspi1, rx, 1, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+}
+
+void gyro_init(void) {
+    uint8_t tx[2] = {0x20, 0x0F};
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, tx, 2, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+}
 /* USER CODE END 0 */
-
 /**
   * @brief  The application entry point.
   * @retval int
@@ -127,22 +163,27 @@ int main(void)
   // Task2 
   HAL_Delay(500); // Wait for sensor to stabilize
   Init_LSM();
+  gyro_init();
   Offset_LSM();
 
+
+
+
   /* USER CODE END 2 */
-  
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     /* USER CODE END WHILE */
-    
+
     /* USER CODE BEGIN 3 */
     // // TAsk 1 : Who am I register
     // sprintf(msg, "WHO_AM_I = 0x%02X\r\n", who_am_i);
     // HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
     
     //Task2
+    Read_Gyro();
     Read_LSM();
     Print_LSM();
     HAL_Delay(100);
@@ -267,17 +308,17 @@ static void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
+  hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 7;
   hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
   if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
@@ -433,12 +474,16 @@ void Read_LSM(void)
 
     lsm.ax = (lsm.raw_ax * 3.9f / 1000.0f) - lsm.acc_offset_x;
     lsm.ay = (lsm.raw_ay * 3.9f / 1000.0f) - lsm.acc_offset_y;
-    lsm.az = (lsm.raw_az * 3.9f / 1000.0f) - lsm.acc_offset_z;
+    lsm.az = (lsm.raw_az * 3.9f / 1000.0f) - lsm.acc_offset_z + 1.0f;
+
+    float acc_angle = atan2f(lsm.ax, lsm.az) * RAD_TO_DEG;
+    lsm.angle = 0.98f * (lsm.angle + lsm.gy *0.1f ) + 0.02f * acc_angle;
 }
 
 void Offset_LSM(void)
 {
     uint8_t buf[6];
+    float sum_gx = 0, sum_gy = 0, sum_gz = 0;
     float sum_x = 0, sum_y = 0, sum_z = 0;
     int samples = 200;
 
@@ -450,17 +495,39 @@ void Offset_LSM(void)
         sum_y += (int16_t)(buf[3] << 8 | buf[2]) * 3.9f / 1000.0f;
         sum_z += (int16_t)(buf[5] << 8 | buf[4]) * 3.9f / 1000.0f;
 
-        HAL_Delay(10);
-    }
 
+        uint8_t xH, xL, yH, yL, zH, zL;
+        gyro_reader(0x29, &xH);
+        gyro_reader(0x28, &xL);
+        gyro_reader(0x2B, &yH);
+        gyro_reader(0x2A, &yL);
+        gyro_reader(0x2D, &zH);
+        gyro_reader(0x2C, &zL);
+        sum_gx += (int16_t)(xH << 8 | xL) * 0.00875f;
+        sum_gy += (int16_t)(yH << 8 | yL) * 0.00875f;
+        sum_gz += (int16_t)(zH << 8 | zL) * 0.00875f;
+        HAL_Delay(10);        
+      }
+      
+    lsm.gyro_offset_x = sum_gx / samples;
+    lsm.gyro_offset_y = sum_gy / samples;
+    lsm.gyro_offset_z = sum_gz / samples;
     lsm.acc_offset_x = sum_x / samples;
     lsm.acc_offset_y = sum_y / samples;
-    lsm.acc_offset_z = (sum_z / samples) - 1.0f; // Assuming Z-axis points upwards, subtract 1g
+    lsm.acc_offset_z = (sum_z / samples);
 }
 void Print_LSM(void)
-{
-    sprintf(msg, "%.2f,%.2f,%.2f\r\n", lsm.ax, lsm.ay, lsm.az);
+{   // // Task 2 : prnt all axis gyro and accel
+    // sprintf(msg, "%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\r\n",
+    //         lsm.ax, lsm.ay, lsm.az,
+    //         lsm.gx, lsm.gy, lsm.gz);
+    // HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+
+    // plot x axis gyro accel and angle
+    sprintf(msg, "%.2f,%.2f,%.2f\r\n",
+        lsm.ax, lsm.gy, lsm.angle);
     HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+
 }
 /* USER CODE END 4 */
 
