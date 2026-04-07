@@ -22,7 +22,10 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "angle.h"
+#include "encoder.h"
 #include "imu.h"
+#include "motor.h"
+#include "pid.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -60,6 +63,8 @@ UART_HandleTypeDef huart3;
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
+pid_t balance_pid;
+volatile float g_setpoint = 0.0f;
 
 /* USER CODE END PV */
 
@@ -82,22 +87,11 @@ static void MX_USB_PCD_Init(void);
 /* USER CODE BEGIN 0 */
 #define RAD_TO_DEG 57.2957795f
 
+extern void encoder_exti_handler(uint16_t GPIO_Pin);
+
 static void uart2_print(const char *msg)
 {
   HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg), HAL_MAX_DELAY);
-}
-
-static uint8_t main_gyro_read_reg(uint8_t reg)
-{
-  uint8_t tx = 0x80U | reg;
-  uint8_t rx = 0;
-
-  HAL_GPIO_WritePin(CS_I2C_SPI_GPIO_Port, CS_I2C_SPI_Pin, GPIO_PIN_RESET);
-  HAL_SPI_Transmit(&hspi1, &tx, 1, HAL_MAX_DELAY);
-  HAL_SPI_Receive(&hspi1, &rx, 1, HAL_MAX_DELAY);
-  HAL_GPIO_WritePin(CS_I2C_SPI_GPIO_Port, CS_I2C_SPI_Pin, GPIO_PIN_SET);
-
-  return rx;
 }
 
 /* USER CODE END 0 */
@@ -140,38 +134,23 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_PCD_Init();
   /* USER CODE BEGIN 2 */
-  uint8_t accel_who = 0;
-  uint8_t gyro_who = 0;
   char line[128];
 
-  (void)snprintf(line, sizeof(line), "\r\nIMU verification start\r\n");
-  uart2_print(line);
-
-  if (HAL_I2C_Mem_Read(&hi2c1, LSM303_ADDR_R, LSM303_WHO_AM_I,
-                       I2C_MEMADD_SIZE_8BIT, &accel_who, 1, HAL_MAX_DELAY) != HAL_OK) {
-    uart2_print("ACC WHO_AM_I read failed\r\n");
-  }
-
-  gyro_who = main_gyro_read_reg(GYRO_WHO_AM_I);
-
-  (void)snprintf(line, sizeof(line), "ACC WHO_AM_I: 0x%02X (expected 0x%02X) %s\r\n",
-                 accel_who,
-                 LSM303_WHO_AM_I_VAL,
-                 (accel_who == LSM303_WHO_AM_I_VAL) ? "OK" : "MISMATCH");
-  uart2_print(line);
-
-  (void)snprintf(line, sizeof(line), "GYRO WHO_AM_I: 0x%02X (expected 0x%02X) %s\r\n",
-                 gyro_who,
-                 GYRO_WHO_AM_I_VAL,
-                 (gyro_who == GYRO_WHO_AM_I_VAL) ? "OK" : "MISMATCH");
+  (void)snprintf(line, sizeof(line), "\r\nPhase 6: Position PID\r\n");
   uart2_print(line);
 
   imu_init(&hi2c1, &hspi1);
   imu_calibrate(200);
   angle_init();
+
+  encoder_init(&htim2);
+  motor_init(&htim3);
+
+  /* Start with Kp=0, Ki=0, Kd=0 and verify motor correction direction first. */
+  pid_init(&balance_pid, 0.0f, 0.0f, 0.0f, 0.0f, -999.0f, 999.0f);
   HAL_TIM_Base_Start_IT(&htim4);
 
-  uart2_print("Telemetry @10Hz: acc_angle,gyro_y,filtered_angle\r\n");
+  uart2_print("UART: angle,pid_output,left_rpm,right_rpm @10Hz\r\n");
 
   /* USER CODE END 2 */
 
@@ -183,17 +162,21 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     if (display_flag) {
-      float acc_angle;
+      float rpm_l;
+      float rpm_r;
+      int len;
 
       display_flag = 0;
-      acc_angle = atan2f(imu.ax, imu.az) * RAD_TO_DEG;
+      rpm_l = encoder_get_rpm_left();
+      rpm_r = encoder_get_rpm_right();
 
-      int len = snprintf(line,
-                         sizeof(line),
-                         "%.2f,%.2f,%.2f\r\n",
-                         acc_angle,
-                         imu.gy,
-                         imu.angle);
+      len = snprintf(line,
+                     sizeof(line),
+                     "%.2f,%.1f,%.1f,%.1f\r\n",
+                     imu.angle,
+                     balance_pid.output,
+                     rpm_l,
+                     rpm_r);
       HAL_UART_Transmit(&huart2, (uint8_t *)line, (uint16_t)len, HAL_MAX_DELAY);
     }
   }
@@ -668,10 +651,45 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == GPIO_PIN_8 || GPIO_Pin == GPIO_PIN_9) {
+    encoder_exti_handler(GPIO_Pin);
+  }
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM4) {
-    angle_update();
+    float acc_angle;
+    float angle_input;
+    float pid_out;
+    int16_t motor_cmd;
+    static uint16_t cnt = 0;
+
+    /* Step 1: read sensors and update angle */
+    imu_read_accel();
+    imu_read_gyro();
+
+    acc_angle = atan2f(imu.ax, imu.az) * RAD_TO_DEG;
+    imu.angle = COMP_ALPHA * (imu.angle + imu.gy * DT) +
+                (1.0f - COMP_ALPHA) * acc_angle;
+
+    /* Step 2: PID computation */
+    balance_pid.setpoint = g_setpoint;
+    angle_input = (float)ANGLE_SIGN * imu.angle;
+    pid_out = pid_compute(&balance_pid, angle_input, DT);
+
+    /* Step 3: drive motors */
+    motor_cmd = (int16_t)pid_out;
+    motor_set(motor_cmd, motor_cmd);
+
+    /* Step 4: display flag every 10 ticks = 10 Hz */
+    cnt++;
+    if (cnt >= 10U) {
+      cnt = 0;
+      display_flag = 1;
+    }
   }
 }
 
