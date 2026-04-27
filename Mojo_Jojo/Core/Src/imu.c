@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define RAD_TO_DEG  57.2957795f
-#define ACC_SCALE   (3.9f / 1000.0f)
+#define ACC_SCALE   (1.0f / 1000.0f)
 #define GYRO_SCALE  0.00875f
 
 /* Macro for angle computation (change axes here if needed) */
@@ -63,7 +63,7 @@ void imu_init(I2C_HandleTypeDef *hi2c, SPI_HandleTypeDef *hspi)
 	uint8_t val;
 
 	/* CTRL_REG1_A: ODR = 100 Hz, all axes enabled */
-	val = 0x57; /* 0101 0111: ODR=100 Hz, LPen=0, Zen=Yen=Xen=1 */
+	val = 0x67; /* Wakes up LSM303DLHC */
 	HAL_I2C_Mem_Write(_hi2c, LSM303_ADDR_W, LSM303_CTRL_REG1_A,
 					  I2C_MEMADD_SIZE_8BIT, &val, 1, HAL_MAX_DELAY);
 
@@ -123,9 +123,9 @@ void imu_read_accel(void)
 	imu.ay_raw = (int16_t)((buf[3] << 8) | buf[2]);
 	imu.az_raw = (int16_t)((buf[5] << 8) | buf[4]);
 
-    imu.ax = ((imu.ax_raw >> 6) * ACC_SCALE) - imu.ax_off;
-    imu.ay = ((imu.ay_raw >> 6) * ACC_SCALE) - imu.ay_off;
-    imu.az = ((imu.az_raw >> 6) * ACC_SCALE) - imu.az_off + 1.0f;
+    imu.ax = ((imu.ax_raw >> 4) * ACC_SCALE) - imu.ax_off;
+    imu.ay = ((imu.ay_raw >> 4) * ACC_SCALE) - imu.ay_off;
+    imu.az = ((imu.az_raw >> 4) * ACC_SCALE) - imu.az_off + 1.0f;
 }
 
 void imu_read_gyro(void)
@@ -146,6 +146,6 @@ void imu_read_gyro(void)
 	imu.gz_raw = (int16_t)((buf[5] << 8) | buf[4]);
 
 	imu.gx = (imu.gx_raw * GYRO_SCALE) - imu.gx_off;
-	imu.gy = (imu.gy_raw * GYRO_SCALE) - imu.gy_off;
+	imu.gy = -((imu.gy_raw * GYRO_SCALE) - imu.gy_off);
 	imu.gz = (imu.gz_raw * GYRO_SCALE) - imu.gz_off;
 }

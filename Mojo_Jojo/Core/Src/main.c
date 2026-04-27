@@ -110,7 +110,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -134,7 +134,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_PCD_Init();
   /* USER CODE BEGIN 2 */
-  char line[128];
+  char line[256];
 
   (void)snprintf(line, sizeof(line), "\r\nPhase 6: Position PID\r\n");
   uart2_print(line);
@@ -147,10 +147,10 @@ int main(void)
   motor_init(&htim3);
 
   /* Start with Kp=0, Ki=0, Kd=0 and verify motor correction direction first. */
-  pid_init(&balance_pid, 0.0f, 0.0f, 0.0f, 0.0f, -999.0f, 999.0f);
+  pid_init(&balance_pid, 65.0f, 5.5f, 1.0f, 0.0f, -999.0f, 999.0f);
   HAL_TIM_Base_Start_IT(&htim4);
 
-  uart2_print("UART: angle,pid_output,left_rpm,right_rpm @10Hz\r\n");
+  uart2_print("UART: ax,ay,az,gx,gy,gz,angle @10Hz\r\n");
 
   /* USER CODE END 2 */
 
@@ -162,21 +162,20 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     if (display_flag) {
-      float rpm_l;
-      float rpm_r;
       int len;
 
       display_flag = 0;
-      rpm_l = encoder_get_rpm_left();
-      rpm_r = encoder_get_rpm_right();
 
       len = snprintf(line,
-                     sizeof(line),
-                     "%.2f,%.1f,%.1f,%.1f\r\n",
-                     imu.angle,
-                     balance_pid.output,
-                     rpm_l,
-                     rpm_r);
+             sizeof(line),
+             "\033[2J\033[H"
+             "Acc X : %.2f  |  Acc Y : %.2f  |  Acc Z : %.2f\r\n"
+             "Gyro X : %.2f  | Gyro Y : %.2f |  Gyro Z : %.2f\r\n"
+             "--------------------------------------------\r\n"
+             "Filtered angle (ay,az) + gy : %.2f\r\n",
+             imu.ax, imu.ay, imu.az,
+             imu.gx, imu.gy, imu.gz,
+             imu.angle);
       HAL_UART_Transmit(&huart2, (uint8_t *)line, (uint16_t)len, HAL_MAX_DELAY);
     }
   }
@@ -661,19 +660,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM4) {
-    float acc_angle;
     float angle_input;
     float pid_out;
     int16_t motor_cmd;
-    static uint16_t cnt = 0;
 
-    /* Step 1: read sensors and update angle */
-    imu_read_accel();
-    imu_read_gyro();
-
-    acc_angle = atan2f(imu.ax, imu.az) * RAD_TO_DEG;
-    imu.angle = COMP_ALPHA * (imu.angle + imu.gy * DT) +
-                (1.0f - COMP_ALPHA) * acc_angle;
+    /* Step 1: read sensors and update angle using angle_update() */
+    angle_update();
 
     /* Step 2: PID computation */
     balance_pid.setpoint = g_setpoint;
@@ -683,13 +675,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     /* Step 3: drive motors */
     motor_cmd = (int16_t)pid_out;
     motor_set(motor_cmd, motor_cmd);
-
-    /* Step 4: display flag every 10 ticks = 10 Hz */
-    cnt++;
-    if (cnt >= 10U) {
-      cnt = 0;
-      display_flag = 1;
-    }
   }
 }
 

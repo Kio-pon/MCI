@@ -1,5 +1,4 @@
-#include "angle.h"
-
+#include "angle.h" 
 #include <math.h>
 
 #define RAD_TO_DEG 57.2957795f
@@ -19,11 +18,10 @@ void angle_update(void)
     /* Step 1: read sensors */
     imu_read_accel();
     imu_read_gyro();
+    /* Step 2: accelerometer angle (use Y/Z plane) */
+    float acc_angle = atan2f(imu.ay, imu.az) * RAD_TO_DEG;
 
-    /* Step 2: accelerometer angle */
-    float acc_angle = atan2f(imu.ax, imu.az) * RAD_TO_DEG;
-
-    /* Step 3: complementary filter */
+    /* Step 3: complementary filter using gyro Y */
     imu.angle = COMP_ALPHA * (imu.angle + (imu.gy) * DT) +
                 (1.0f - COMP_ALPHA) * acc_angle;
 
