@@ -23,6 +23,7 @@ void pid_init(pid_t *pid,
               float out_min,
               float out_max);
 float pid_compute(pid_t *pid, float measurement, float dt);
+float pid_compute_speed(pid_t *pid, float target_rpm, float actual_rpm, float dt);
 void pid_reset(pid_t *pid);
 
 #endif /* PID_H */

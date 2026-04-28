@@ -51,6 +51,12 @@ float pid_compute(pid_t *pid, float measurement, float dt)
     return out;
 }
 
+float pid_compute_speed(pid_t *pid, float target_rpm, float actual_rpm, float dt)
+{
+    pid->setpoint = target_rpm;
+    return pid_compute(pid, actual_rpm, dt);
+}
+
 void pid_reset(pid_t *pid)
 {
     pid->integral = 0.0f;

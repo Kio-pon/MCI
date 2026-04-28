@@ -64,6 +64,7 @@ PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
 pid_t balance_pid;
+pid_t speed_pid;
 volatile float g_setpoint = 0.0f;
 
 /* USER CODE END PV */
@@ -88,11 +89,6 @@ static void MX_USB_PCD_Init(void);
 #define RAD_TO_DEG 57.2957795f
 
 extern void encoder_exti_handler(uint16_t GPIO_Pin);
-
-static void uart2_print(const char *msg)
-{
-  HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)strlen(msg), HAL_MAX_DELAY);
-}
 
 /* USER CODE END 0 */
 
@@ -134,10 +130,6 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_PCD_Init();
   /* USER CODE BEGIN 2 */
-  char line[256];
-
-  (void)snprintf(line, sizeof(line), "\r\nPhase 6: Position PID\r\n");
-  uart2_print(line);
 
   imu_init(&hi2c1, &hspi1);
   imu_calibrate(200);
@@ -146,11 +138,26 @@ int main(void)
   encoder_init(&htim2);
   motor_init(&htim3);
 
-  /* Start with Kp=0, Ki=0, Kd=0 and verify motor correction direction first. */
-  pid_init(&balance_pid, 65.0f, 5.5f, 1.0f, 0.0f, -999.0f, 999.0f);
+  /* Fixed cascaded PID setup (no preset sweep). */
+  pid_init(&balance_pid,
+           60.0f,
+           0.15f,
+           0.8f,
+           0.0f,
+           -300.0f,
+           300.0f);
+
+
+  pid_init(&speed_pid,
+           0.5f,
+           0.001f,  
+           0.01f,  
+           0.0f,
+           -999.0f,
+           999.0f);
+
   HAL_TIM_Base_Start_IT(&htim4);
 
-  uart2_print("UART: ax,ay,az,gx,gy,gz,angle @10Hz\r\n");
 
   /* USER CODE END 2 */
 
@@ -161,23 +168,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (display_flag) {
-      int len;
-
-      display_flag = 0;
-
-      len = snprintf(line,
-             sizeof(line),
-             "\033[2J\033[H"
-             "Acc X : %.2f  |  Acc Y : %.2f  |  Acc Z : %.2f\r\n"
-             "Gyro X : %.2f  | Gyro Y : %.2f |  Gyro Z : %.2f\r\n"
-             "--------------------------------------------\r\n"
-             "Filtered angle (ay,az) + gy : %.2f\r\n",
-             imu.ax, imu.ay, imu.az,
-             imu.gx, imu.gy, imu.gz,
-             imu.angle);
-      HAL_UART_Transmit(&huart2, (uint8_t *)line, (uint16_t)len, HAL_MAX_DELAY);
-    }
+    
   }
   /* USER CODE END 3 */
 }
@@ -661,18 +652,35 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM4) {
     float angle_input;
+    float target_rpm;
     float pid_out;
     int16_t motor_cmd;
 
     /* Step 1: read sensors and update angle using angle_update() */
     angle_update();
 
-    /* Step 2: PID computation */
+    /* Step 2: position PID -> target RPM */
     balance_pid.setpoint = g_setpoint;
     angle_input = (float)ANGLE_SIGN * imu.angle;
-    pid_out = pid_compute(&balance_pid, angle_input, DT);
+    target_rpm = pid_compute(&balance_pid, angle_input, DT);
 
-    /* Step 3: drive motors */
+    
+    target_rpm = target_rpm;
+
+    /* Step 3: speed PID -> PWM command */
+    /* Encoders lack direction info, so infer direction from the target RPM */
+    float raw_rpm = (encoder_get_rpm_left() + encoder_get_rpm_right()) * 0.5f;
+    if (target_rpm > 0.0f) {
+        raw_rpm = -raw_rpm;
+    }
+    
+    /* Low-pass filter */
+    static float filtered_rpm = 0.0f;
+    filtered_rpm = 0.8f * filtered_rpm + 0.2f * raw_rpm;
+
+    pid_out = pid_compute_speed(&speed_pid, target_rpm, filtered_rpm, DT);
+
+    /* Step 4: drive motors */
     motor_cmd = (int16_t)pid_out;
     motor_set(motor_cmd, motor_cmd);
   }
