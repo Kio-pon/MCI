@@ -63,8 +63,8 @@ UART_HandleTypeDef huart3;
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
-pid_t balance_pid;
-pid_t speed_pid;
+pid_controller_t balance_pid;
+pid_controller_t speed_pid;
 volatile float g_setpoint = 0.0f;
 
 /* USER CODE END PV */
@@ -89,6 +89,7 @@ static void MX_USB_PCD_Init(void);
 #define RAD_TO_DEG 57.2957795f
 
 extern void encoder_exti_handler(uint16_t GPIO_Pin);
+extern void load_gains_and_run(void);  /* PSO tuning function */
 
 /* USER CODE END 0 */
 
@@ -138,25 +139,13 @@ int main(void)
   encoder_init(&htim2);
   motor_init(&htim3);
 
-  /* Fixed cascaded PID setup (no preset sweep). */
-  pid_init(&balance_pid,
-           60.0f,
-           0.15f,
-           0.8f,
-           0.0f,
-           -300.0f,
-           300.0f);
+  {
+    const char boot_msg[] = "BOOT\n";
+    HAL_UART_Transmit(&huart2, (uint8_t *)boot_msg, sizeof(boot_msg) - 1, 100);
+  }
 
-
-  pid_init(&speed_pid,
-           0.5f,
-           0.001f,  
-           0.01f,  
-           0.0f,
-           -999.0f,
-           999.0f);
-
-  HAL_TIM_Base_Start_IT(&htim4);
+  /* PSO tuning mode: load gains from UART instead of hard-coded */
+  load_gains_and_run();  /* This blocks and never returns (runs trial loop) */
 
 
   /* USER CODE END 2 */
@@ -377,9 +366,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 47;
+  htim3.Init.Prescaler = 0;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 999;
+  htim3.Init.Period = 4799;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -659,6 +648,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     /* Step 1: read sensors and update angle using angle_update() */
     angle_update();
 
+     {
+      static char uart_buf[128];
+      float accel_angle = atan2f(imu.ay, imu.az) * RAD_TO_DEG;
+      int len = snprintf(uart_buf, sizeof(uart_buf), "%.2f,%.2f,%.2f\r\n",
+                         accel_angle, imu.gx, imu.angle);
+      HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, len, 100);
+    }
     /* Step 2: position PID -> target RPM */
     balance_pid.setpoint = g_setpoint;
     angle_input = (float)ANGLE_SIGN * imu.angle;
@@ -667,20 +663,23 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     
     target_rpm = target_rpm;
 
-    /* Step 3: speed PID -> PWM command */
+    /* Step 3: COMMENTED OUT - Speed PID disabled */
     /* Encoders lack direction info, so infer direction from the target RPM */
+    /*
     float raw_rpm = (encoder_get_rpm_left() + encoder_get_rpm_right()) * 0.5f;
     if (target_rpm > 0.0f) {
         raw_rpm = -raw_rpm;
     }
     
-    /* Low-pass filter */
+    // Low-pass filter
     static float filtered_rpm = 0.0f;
     filtered_rpm = 0.8f * filtered_rpm + 0.2f * raw_rpm;
 
     pid_out = pid_compute_speed(&speed_pid, target_rpm, filtered_rpm, DT);
+    */
 
-    /* Step 4: drive motors */
+    /* Step 4: Use position PID output directly as motor command */
+    pid_out = target_rpm;  /* Use target_rpm from position PID directly */
     motor_cmd = (int16_t)pid_out;
     motor_set(motor_cmd, motor_cmd);
   }

@@ -1,4 +1,4 @@
-#!/home/azyan/MCI_Copy/venv/bin/python3
+#!/home/administrator/MCI/MCI/venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

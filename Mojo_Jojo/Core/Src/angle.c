@@ -3,6 +3,8 @@
 
 #define RAD_TO_DEG 57.2957795f
 
+float COMP_ALPHA = 0.985f;     /* gyro trust factor */
+float g_angle = 0.0f;          /* current angle for external use */
 volatile uint8_t display_flag = 0;
 static uint16_t tick_count = 0;
 
@@ -31,4 +33,7 @@ void angle_update(void)
         tick_count = 0;
         display_flag = 1;
     }
+
+    /* Step 5: expose current angle for PSO */
+    g_angle = imu.angle;
 }
