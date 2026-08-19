@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define RAD_TO_DEG  57.2957795f
-#define ACC_SCALE   (3.9f / 1000.0f)
+#define ACC_SCALE   (1.0f / 1000.0f)
 #define GYRO_SCALE  0.00875f
 
 /* Macro for angle computation (change axes here if needed) */
@@ -59,7 +59,7 @@ void imu_init(I2C_HandleTypeDef *hi2c, SPI_HandleTypeDef *hspi)
 	/* --- Gyroscope CS idle high --- */
 	gyro_cs_high();
 
-	/* --- LSM303AGR accelerometer init --- */
+	/* --- LSM303DLHC accelerometer init --- */
 	uint8_t val;
 
 	/* CTRL_REG1_A: ODR = 100 Hz, all axes enabled */
@@ -67,17 +67,20 @@ void imu_init(I2C_HandleTypeDef *hi2c, SPI_HandleTypeDef *hspi)
 	HAL_I2C_Mem_Write(_hi2c, LSM303_ADDR_W, LSM303_CTRL_REG1_A,
 					  I2C_MEMADD_SIZE_8BIT, &val, 1, HAL_MAX_DELAY);
 
-	/* CTRL_REG4_A: normal mode, +/-2g */
-	val = 0x00;
+	/* CTRL_REG4_A: BDU=1, HR=1, FS=+/-2g */
+	val = 0x88;
 	HAL_I2C_Mem_Write(_hi2c, LSM303_ADDR_W, LSM303_CTRL_REG4_A,
 					  I2C_MEMADD_SIZE_8BIT, &val, 1, HAL_MAX_DELAY);
 
-	/* --- I3G4250D gyroscope init --- */
+	/* --- L3GD20 gyroscope init --- */
 	/* CTRL_REG1: PD=1, ODR=100 Hz, BW=25 Hz, all axes on */
 	/* Binary: 00 00 1111 = 0x0F for 100 Hz ODR */
 	/* Or use 0x8F for 800 Hz ODR */
 	/* For 100 Hz control loop, 100 Hz ODR is fine */
 	gyro_write_reg(GYRO_CTRL_REG1, 0x0F);
+
+	/* CTRL_REG4: FS=00 (+/-250 dps), BDU=1 for coherent L/H reads */
+	gyro_write_reg(GYRO_CTRL_REG4, 0x80);
 
 	(void)gyro_read_reg(GYRO_WHO_AM_I);
 }
@@ -123,9 +126,9 @@ void imu_read_accel(void)
 	imu.ay_raw = (int16_t)((buf[3] << 8) | buf[2]);
 	imu.az_raw = (int16_t)((buf[5] << 8) | buf[4]);
 
-    imu.ax = ((imu.ax_raw >> 6) * ACC_SCALE) - imu.ax_off;
-    imu.ay = ((imu.ay_raw >> 6) * ACC_SCALE) - imu.ay_off;
-    imu.az = ((imu.az_raw >> 6) * ACC_SCALE) - imu.az_off + 1.0f;
+	imu.ax = ((imu.ax_raw >> 4) * ACC_SCALE) - imu.ax_off;
+	imu.ay = ACC_Y_SIGN * (((imu.ay_raw >> 4) * ACC_SCALE) - imu.ay_off);
+	imu.az = ((imu.az_raw >> 4) * ACC_SCALE) - imu.az_off + 1.0f;
 }
 
 void imu_read_gyro(void)
@@ -146,6 +149,6 @@ void imu_read_gyro(void)
 	imu.gz_raw = (int16_t)((buf[5] << 8) | buf[4]);
 
 	imu.gx = (imu.gx_raw * GYRO_SCALE) - imu.gx_off;
-	imu.gy = (imu.gy_raw * GYRO_SCALE) - imu.gy_off;
+	imu.gy = GYRO_Y_SIGN * ((imu.gy_raw * GYRO_SCALE) - imu.gy_off);
 	imu.gz = (imu.gz_raw * GYRO_SCALE) - imu.gz_off;
 }

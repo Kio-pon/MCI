@@ -1,0 +1,164 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{float}
+
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false
+}
+
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\LARGE \textbf{Lab 11: Open Ended Lab: Design and Validate a Feedback-Controlled Motor Speed System}}\par
+    \vspace{1.5cm}
+    {\large Name: Azyan Ahmed}\par
+    \vspace{0.5cm}
+    {\large ID: aa10287}\par
+    \vspace{0.5cm}
+    {\large \today}\par
+    \vfill
+\end{titlepage}
+
+\section{Introduction}
+
+This report details the implementation of a Self-Balancing Robot using the STM32F3 Discovery (Blue) board equipped with an ARM Cortex-M4 processor. Over the course of the project, sensory data acquisition from a gyroscope (I3G4250D) via SPI1 and an accelerometer (LSM303AGR) via I2C1 was combined to reliably estimate tilt orientation. This tilt estimation fed into a dedicated Position Proportional-Integral-Derivative (PID) controller, calculating corrective outputs sent as PWM signals to DC motors.
+
+This firmware specifically achieved verifying the sensory feedback loop where tilt orientation was successfully mapped to the appropriate motor (tire) direction and response mapping, executing \textbf{Phase 6: Position PID Control} logic.
+
+\section{System Configuration Overview}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Peripheral} & \textbf{Usage} \\
+\midrule
+I2C1 (PB6/PB7) & Accelerometer (LSM303AGR) \\
+SPI1 (PA5/PA6/PA7/PE3) & Gyroscope (I3G4250D) \\
+TIM4 (100 Hz) & Core control loop interrupts ($dt = 0.01$s) \\
+TIM3 (1 kHz) & Motor PWM output generation (PB4/PB5) \\
+EXTI (PC8/PC9) & Encoder inputs (pulse counting) \\
+USART2 (115200 Baud) & Diagnostic data plotting and text output \\
+\bottomrule
+\end{tabular}
+\caption{Peripheral Allocations}
+\end{table}
+
+\section{Task 1: Angle Estimation using IMU}
+
+\subsection{Objective}
+Accurately determining the robot's tilt angle by combining high-frequency gyroscope inputs and long-term stable gravitational acceleration through a complementary filter. 
+
+\subsection{Code Implementation \& Deviations}
+
+The complementary filter runs cleanly at a constant frequency driven by the `TIM4` interrupt. Below is the configuration structure detailing specific modifications made to coordinate axes according to real-world physics.
+
+\begin{lstlisting}[caption=Complementary Filter Implementation (`main.c`)]
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM4) {
+    float acc_angle;
+    // ...
+    /* Step 1: read sensors and update angle */
+    imu_read_accel();
+    imu_read_gyro();
+
+    acc_angle = (ACC_TILT_SIGN * atan2f(imu.ay, imu.az)) * RAD_TO_DEG;
+    imu.angle = COMP_ALPHA * (imu.angle + (GYRO_TILT_SIGN * imu.gy) * DT) +
+                (1.0f - COMP_ALPHA) * acc_angle;
+    // ...
+  }
+}
+\end{lstlisting}
+
+\subsection{Explanation of Weights and Signs}
+
+Typically, the textbook filter constant is `0.98`. However, aggressive motor movement and vibration fed back heavily into the accelerometer on the actual chassis. 
+To counteract this problem without adding unneeded DSP lag:
+\begin{itemize}
+    \item \textbf{\texttt{COMP\_ALPHA = 0.985f}} was selected, trusting the gyroscope for 98.5\% of the measurement. 
+    \item \textbf{Sign Transformations:} \texttt{ACC\_TILT\_SIGN} and \texttt{GYRO\_TILT\_SIGN} were both multiplied by \texttt{-1.0f} to cleanly resolve the hardware mounting orientation of the blue STM32F3 board relative to the chassis frame layout. 
+    \item The angle computation targets the pitch using \texttt{imu.ay} and \texttt{imu.az} vectors instead of the default $X$/$Z$ mapping. 
+\end{itemize}
+
+\section{Task 2: Position PID Controller Implementation}
+
+\subsection{Objective}
+Implement the PI/PD/PID equations to correct the calculated tilt using precise timing derived from the hardware timers.
+
+\subsection{Code Implementation}
+
+The code snippet below shows the initial configuration, which establishes constants to overcome the friction band (deadband) of the DC motors, ensuring they visually rotate in response to orientation input. The setpoint naturally defaults to exactly 0.0$^\circ$ (perpendicular vertical).
+
+\begin{lstlisting}[caption=PID Initialization (`main.c`)]
+  /* Start with Kp=0, Ki=0, Kd=0 and verify motor direction first. */
+  pid_init(&balance_pid, 65.0f, 6.5f, 0.5f, 0.0f, -999.0f, 999.0f);
+  HAL_TIM_Base_Start_IT(&htim4);
+\end{lstlisting}
+
+\begin{lstlisting}[caption=PID Update execution within TIM4 loop (`main.c`)]
+    /* Step 2: PID computation */
+    balance_pid.setpoint = 0.0f;
+    angle_input = (float)ANGLE_SIGN * imu.angle;
+
+    if (g_fallen || angle_input > 45.0f || angle_input < -45.0f) {
+      g_fallen = 1;
+      g_fall_event = 1;
+      pid_reset(&balance_pid);
+      motor_stop();
+    } else {
+      pid_out = pid_compute(&balance_pid, angle_input, DT);
+
+      /* Step 3: drive motors */
+      motor_cmd = (int16_t)pid_out;
+      motor_set(motor_cmd, motor_cmd);
+    }
+\end{lstlisting}
+
+\subsection{Performance Highlights \& Fall Detection}
+
+Rather than directly attempting a cascaded system or fully tuning the PID to achieve perfect balance, the focus of this phase was validating the feedback loop. By applying an initial Proportional gain ($K_p$), the system was tested to ensure the motors (tires) rotated in the correct direction in response to the tilt angle. The implementation successfully outputs the calculated variables into the python plotting script at 10Hz updates, confirming the sensory-motor response chain.
+
+An additional safety feature was implemented beyond base requirements: \textbf{Fall Cutoff}. Setting motor output to 0 if the recorded lean surpasses $45^\circ$, which resets the internal integral terms avoiding runaway motor windup if human interaction picks the chassis up later.
+
+\section{Evaluation Questions}
+
+\subsection{(a) What role does each PID term play in the controller's response?}
+\begin{itemize}
+    \item \textbf{Proportional (P):} Drives the motor in direct relation to how far the robot is leaning. P exerts the primary immediate force responsible for the visible tires rotation responding to tilt.
+    \item \textbf{Integral (I):} Eliminates prolonged lean errors by continuing to increase motor speed gently as error sums up over time. Acts primarily against long-term gravity fighting off dead-center balancing offsets.
+    \item \textbf{Derivative (D):} Dampens down aggressive forces exerted by the Proportional unit as the orientation approaches the 0$^\circ$ setpoint, minimizing overshoot shaking.
+\end{itemize}
+
+\subsection{(b) How does changing $K_p$, $K_i$, or $K_d$ affect system performance?}
+\begin{itemize}
+    \item Increasing $K_p$ forces the motors up to higher speeds quicker, improving response times up until structural vibrations cause violent chatter. Lowering $K_p$ produces a sluggish drop where the robot never develops sufficient force to push its center of mass back up.
+    \item Increasing $K_i$ too drastically accumulates a ``memory'' of previous lean that forces motors to overcompensate long after the angle sets to zero, accelerating the bot in one direction across the desk.
+    \item Increasing $K_d$ allows for smoother and faster braking, reducing wobble, however pushing $K_d$ too high amplifies microscopic gyroscope sensor noise leading to horrible high-pitched whining inside the drivers.
+\end{itemize}
+
+\subsection{(c) What challenges did you face in initial tuning the controller? What will be your strategy for the final fine tuning of the controller?}
+The primary challenge faced was dealing with the extreme internal friction of the DC motors, creating a deadzone where PWM inputs between $-200$ and $200$ caused zero physical rotation. To overcome this block and simply verify that the tires were rotating in the proper direction in response to tilt inputs, the Proportional constant ($K_p$) required an increase to extremely high thresholds mathematically (e.g. $65.0f$), which then amplified noise into the rest of the system.
+
+For the final fine-tuning of the controller, I plan to start by finding the minimal base hardware offset to overcome the deadzone. Once the motor initiates rotation efficiently, I will stabilize the Position loop with $K_p$ and $K_d$ to act as an RPM targeting calculator rather than an aggressive direct PWM controller, allowing a cascaded Speed PID loop to manage friction and achieve actual balance.
+
+\subsection{(d) What are the limitations of using a simple PID for real-world systems?}
+Traditional PID assumes linear relations: e.g. 5x error means 5x torque response. But inverted pendulum balance robots heavily deviate due to gravitational physics acting on purely rotary mechanics and the friction problems discussed above. The system ignores mechanical backlashes in the 30:1 gearing boxes, the drop off of battery voltage curve discharging mid-test over life cycle, or shifted center-of-gravity. This leads to tuning constants that work brilliantly inside the laboratory room specifically on a Monday, and completely fail by Thursday because someone relocated the battery wires.
+
+\end{document}

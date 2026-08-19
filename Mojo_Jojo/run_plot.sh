@@ -14,4 +14,4 @@ sudo chmod 666 "$PORT"
 # Activate venv and run
 echo "Starting plot_adc.py..."
 source ./env/bin/activate
-python sensorplot.py
+python sensorplot.py /home/azyan/Downloads/audio

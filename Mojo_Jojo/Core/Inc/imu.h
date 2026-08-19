@@ -5,7 +5,18 @@
 
 /* ---------- Compile-time axis configuration ---------- */
 /* Flip ANGLE_SIGN to -1 if motor correction is inverted */
-#define ANGLE_SIGN -1
+#define ANGLE_SIGN 1
+
+/*
+ * Sensor-fusion sign controls.
+ * Use these to align accelerometer tilt and gyro rate directions.
+ */
+#define ACC_TILT_SIGN   -1.0f
+#define GYRO_TILT_SIGN -1.0f
+
+/* Raw diagnostic sign controls for Y axis. */
+#define ACC_Y_SIGN    1.0f
+#define GYRO_Y_SIGN   -1.0f
 
 /*
  * Default angle computation uses atan2f(ax, az).
@@ -13,19 +24,18 @@
  */
 
 /* ---------- Sensor addresses and registers ---------- */
-/* LSM303AGR accelerometer (I2C) */
+/* LSM303DLHC accelerometer (I2C) */
 #define LSM303_ADDR_W        0x32
 #define LSM303_ADDR_R        0x33
-#define LSM303_WHO_AM_I      0x0F
-#define LSM303_WHO_AM_I_VAL  0x33
 #define LSM303_CTRL_REG1_A   0x20
 #define LSM303_CTRL_REG4_A   0x23
 #define LSM303_OUT_X_L_A     0x28
 
-/* I3G4250D gyroscope (SPI) */
+/* L3GD20 gyroscope (SPI) */
 #define GYRO_WHO_AM_I      0x0F
-#define GYRO_WHO_AM_I_VAL  0xD3
+#define GYRO_WHO_AM_I_VAL  0xD4
 #define GYRO_CTRL_REG1     0x20
+#define GYRO_CTRL_REG4     0x23
 #define GYRO_OUT_X_L       0x28
 
 /* ---------- Data structure ---------- */

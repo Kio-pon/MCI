@@ -40,6 +40,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define FALL_ANGLE_DEG 40.0f
 
 /* USER CODE END PD */
 
@@ -63,8 +64,10 @@ UART_HandleTypeDef huart3;
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
-pid_t balance_pid;
-volatile float g_setpoint = 0.0f;
+pid_t balance_pid;    /* Position (angle) PID */
+pid_t speed_pid;      /* Speed (RPM) PID */
+volatile uint8_t g_fallen = 0;
+volatile uint8_t g_fall_event = 0;
 
 /* USER CODE END PV */
 
@@ -142,16 +145,21 @@ int main(void)
   imu_init(&hi2c1, &hspi1);
   imu_calibrate(200);
   angle_init();
+  g_fallen = 0;
+  g_fall_event = 0;
 
   encoder_init(&htim2);
   motor_init(&htim3);
 
-  /* Start with Kp=0, Ki=0, Kd=0 and verify motor correction direction first. */
-  pid_init(&balance_pid, 0.0f, 0.0f, 0.0f, 0.0f, -999.0f, 999.0f);
+  /* Position PID: angle -> target RPM (cascaded mode) */
+  pid_init(&balance_pid, 65.0f, 6.5f, 0.65f, 0.0f, -300.0f, 300.0f);
+  
+  /* Speed PID: target RPM -> PWM command (conservative Kp) */
+  pid_init(&speed_pid,1.0f, 0.0f, 0.0f, 0.0f, -999.0f, 999.0f);
   HAL_TIM_Base_Start_IT(&htim4);
 
-  uart2_print("UART: angle,pid_output,left_rpm,right_rpm @10Hz\r\n");
-
+  uart2_print("UART: angle,target_rpm,actual_rpm,pwm_cmd @10Hz\r\n");
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -161,6 +169,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    if (g_fall_event) {
+      g_fall_event = 0;
+      uart2_print("FALL DETECTED: |angle| > 45 deg, motors stopped\r\n");
+    }
+
     if (display_flag) {
       float rpm_l;
       float rpm_r;
@@ -175,8 +188,8 @@ int main(void)
                      "%.2f,%.1f,%.1f,%.1f\r\n",
                      imu.angle,
                      balance_pid.output,
-                     rpm_l,
-                     rpm_r);
+                     (rpm_l + rpm_r) / 2.0f,
+                     speed_pid.output);
       HAL_UART_Transmit(&huart2, (uint8_t *)line, (uint16_t)len, HAL_MAX_DELAY);
     }
   }
@@ -663,7 +676,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM4) {
     float acc_angle;
     float angle_input;
-    float pid_out;
+    float target_rpm;
+    float actual_rpm;
+    float pwm_cmd;
     int16_t motor_cmd;
     static uint16_t cnt = 0;
 
@@ -671,20 +686,35 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     imu_read_accel();
     imu_read_gyro();
 
-    acc_angle = atan2f(imu.ax, imu.az) * RAD_TO_DEG;
-    imu.angle = COMP_ALPHA * (imu.angle + imu.gy * DT) +
+    acc_angle = (ACC_TILT_SIGN * atan2f(imu.ay, imu.az)) * RAD_TO_DEG;
+    imu.angle = COMP_ALPHA * (imu.angle + (GYRO_TILT_SIGN * imu.gy) * DT) +
                 (1.0f - COMP_ALPHA) * acc_angle;
 
-    /* Step 2: PID computation */
-    balance_pid.setpoint = g_setpoint;
+    /* Step 2: Position PID (angle -> target RPM) */
+    balance_pid.setpoint = 0.0f;
     angle_input = (float)ANGLE_SIGN * imu.angle;
-    pid_out = pid_compute(&balance_pid, angle_input, DT);
 
-    /* Step 3: drive motors */
-    motor_cmd = (int16_t)pid_out;
-    motor_set(motor_cmd, motor_cmd);
+    if (g_fallen || angle_input > FALL_ANGLE_DEG || angle_input < -FALL_ANGLE_DEG) {
+      g_fallen = 1;
+      g_fall_event = 1;
+      pid_reset(&balance_pid);
+      pid_reset(&speed_pid);
+      motor_stop();
+    } else {
+      /* Position PID outputs target RPM */
+      target_rpm = pid_compute(&balance_pid, angle_input, DT);
 
-    /* Step 4: display flag every 10 ticks = 10 Hz */
+      /* Step 3: Speed PID (target RPM -> PWM command) */
+      actual_rpm = (encoder_get_rpm_left() + encoder_get_rpm_right()) / 2.0f;
+      speed_pid.setpoint = target_rpm;
+      pwm_cmd = pid_compute(&speed_pid, actual_rpm, DT);
+
+      /* Step 4: drive motors with cascaded output */
+      motor_cmd = (int16_t)pwm_cmd;
+      motor_set(motor_cmd, motor_cmd);
+    }
+
+    /* Step 5: display flag every 10 ticks = 10 Hz */
     cnt++;
     if (cnt >= 10U) {
       cnt = 0;

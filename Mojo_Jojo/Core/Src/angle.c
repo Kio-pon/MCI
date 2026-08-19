@@ -21,7 +21,7 @@ void angle_update(void)
     imu_read_gyro();
 
     /* Step 2: accelerometer angle */
-    float acc_angle = atan2f(imu.ax, imu.az) * RAD_TO_DEG;
+    float acc_angle = atan2f(imu.ay, imu.az) * RAD_TO_DEG;
 
     /* Step 3: complementary filter */
     imu.angle = COMP_ALPHA * (imu.angle + (imu.gy) * DT) +
