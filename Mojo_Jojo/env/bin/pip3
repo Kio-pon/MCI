@@ -1,4 +1,4 @@
-#!/home/azyan/MCI_Copy/MCI-Lab07/lab7_env/bin/python3
+#!/home/administrator/MCI/MCI/Mojo_Jojo/env/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

@@ -34,9 +34,12 @@ void encoder_exti_handler(uint16_t GPIO_Pin)
 
 float encoder_get_rpm_right(void)
 {
+    if (_htim == NULL) return 0.0f;
+    uint32_t now = __HAL_TIM_GET_COUNTER(_htim);
     uint32_t p = right_period;
 
-    if (p == 0) {
+    /* If stopped or hasn't ticked in 100ms (< 1.8 RPM), report 0 speed */
+    if (p == 0 || (now - right_last_tick) > 100000) {
         return 0.0f;
     }
 
@@ -47,9 +50,11 @@ float encoder_get_rpm_right(void)
 
 float encoder_get_rpm_left(void)
 {
+    if (_htim == NULL) return 0.0f;
+    uint32_t now = __HAL_TIM_GET_COUNTER(_htim);
     uint32_t p = left_period;
 
-    if (p == 0) {
+    if (p == 0 || (now - left_last_tick) > 100000) {
         return 0.0f;
     }
 

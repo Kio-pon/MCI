@@ -1,6 +1,6 @@
 #include "pid.h"
 
-void pid_init(pid_t *pid,
+void pid_init(pid_controller_t *pid,
               float kp,
               float ki,
               float kd,
@@ -21,7 +21,7 @@ void pid_init(pid_t *pid,
     pid->output = 0.0f;
 }
 
-float pid_compute(pid_t *pid, float measurement, float dt)
+float pid_compute(pid_controller_t *pid, float measurement, float dt)
 {
     float error = pid->setpoint - measurement;
 
@@ -51,7 +51,13 @@ float pid_compute(pid_t *pid, float measurement, float dt)
     return out;
 }
 
-void pid_reset(pid_t *pid)
+float pid_compute_speed(pid_controller_t *pid, float target_rpm, float actual_rpm, float dt)
+{
+    pid->setpoint = target_rpm;
+    return pid_compute(pid, actual_rpm, dt);
+}
+
+void pid_reset(pid_controller_t *pid)
 {
     pid->integral = 0.0f;
     pid->prev_error = 0.0f;

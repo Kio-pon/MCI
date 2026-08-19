@@ -25,7 +25,7 @@ static void set_right(int16_t speed)
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
     }
 
-    if (speed > 999) speed = 999;
+    if (speed > 4799) speed = 4799;
     __HAL_TIM_SET_COMPARE(_htim, TIM_CHANNEL_1, (uint16_t)speed);
 }
 
@@ -43,7 +43,7 @@ static void set_left(int16_t speed)
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_7, GPIO_PIN_RESET);
     }
 
-    if (speed > 999) speed = 999;
+    if (speed > 4799) speed = 4799;
     __HAL_TIM_SET_COMPARE(_htim, TIM_CHANNEL_2, (uint16_t)speed);
 }
 
